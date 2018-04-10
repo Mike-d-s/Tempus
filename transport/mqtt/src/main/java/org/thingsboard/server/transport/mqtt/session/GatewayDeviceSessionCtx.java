@@ -24,6 +24,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.handler.codec.mqtt.*;
+import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.id.SessionId;
 import org.thingsboard.server.common.data.kv.AttributeKvEntry;
@@ -45,7 +46,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Created by ashvayka on 19.01.17.
  */
-
+@Slf4j
 public class GatewayDeviceSessionCtx extends DeviceAwareSessionContext {
 
     private static final Gson GSON = new Gson();

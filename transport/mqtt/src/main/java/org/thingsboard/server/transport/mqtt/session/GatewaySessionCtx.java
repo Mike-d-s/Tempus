@@ -27,6 +27,7 @@ import org.springframework.util.StringUtils;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.id.SessionId;
 import org.thingsboard.server.common.data.kv.BaseAttributeKvEntry;
+import org.thingsboard.server.common.data.kv.KvEntry;
 import org.thingsboard.server.common.data.relation.EntityRelation;
 import org.thingsboard.server.common.msg.core.*;
 import org.thingsboard.server.common.msg.session.BasicAdaptorToSessionActorMsg;
@@ -40,6 +41,7 @@ import org.thingsboard.server.dao.device.DeviceService;
 import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.transport.mqtt.MqttTransportHandler;
 import org.thingsboard.server.transport.mqtt.adaptors.JsonMqttAdaptor;
+import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMsgTypes;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -141,6 +143,47 @@ public class GatewaySessionCtx {
             }
         } else {
             throw new JsonSyntaxException(CAN_T_PARSE_VALUE + json);
+        }
+    }
+
+    public void onSparkPlugDecodedMsg(Long ts, MqttPublishMessage mqttMsg, List<KvEntry> kvEntryList) throws AdaptorException {
+        int requestId = mqttMsg.variableHeader().messageId();
+        String deviceName = createDeviceName(mqttMsg.variableHeader().topicName());
+        deviceName = checkDeviceConnected(deviceName);
+        BasicTelemetryUploadRequest request = new BasicTelemetryUploadRequest(requestId);
+        for (KvEntry entry : kvEntryList) {
+            request.add(ts, entry);
+        }
+        GatewayDeviceSessionCtx deviceSessionCtx = devices.get(deviceName);
+        processor.process(new BasicToDeviceActorSessionMsg(deviceSessionCtx.getDevice(),
+                new BasicAdaptorToSessionActorMsg(deviceSessionCtx, request)));
+    }
+
+    private String createDeviceName(String topicName){
+        String[] splitTopic = topicName.split("/");
+        StringBuilder deviceName = new StringBuilder();
+        String delimeter = "";
+        for (String str: splitTopic) {
+            if(!sparkPlugMsgTypes(str)) {
+                deviceName.append(delimeter);
+                deviceName.append(str);
+                delimeter = "/";
+            }
+        }
+        return deviceName.toString();
+    }
+
+    private boolean sparkPlugMsgTypes(String type){
+        switch (type){
+            case SparkPlugMsgTypes.DBIRTH : return true;
+            case SparkPlugMsgTypes.DDEATH : return true;
+            case SparkPlugMsgTypes.DDATA : return true;
+            case SparkPlugMsgTypes.NBIRTH : return true;
+            case SparkPlugMsgTypes.NDATA : return true;
+            case SparkPlugMsgTypes.NDEATH : return true;
+            case SparkPlugMsgTypes.NCMD : return true;
+            case SparkPlugMsgTypes.DCMD : return true;
+            default: return false;
         }
     }
 
