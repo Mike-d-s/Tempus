@@ -25,7 +25,6 @@ import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.time.StopWatch;
 import org.springframework.util.StringUtils;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.security.DeviceTokenCredentials;
@@ -359,7 +358,7 @@ public class MqttTransportHandler extends ChannelInboundHandlerAdapter implement
             processor.process(SessionCloseMsg.onDisconnect(deviceSessionCtx.getSessionId()));
             if (gatewaySessionCtx != null) {
                 gatewaySessionCtx.onGatewayDisconnect();
-                sparkPlugSpecificationService.updateMapState();
+                sparkPlugSpecificationService.updateDeviceMapState();
             }
         }
     }
