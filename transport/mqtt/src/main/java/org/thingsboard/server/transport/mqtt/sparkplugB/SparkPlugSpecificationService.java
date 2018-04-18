@@ -1,6 +1,8 @@
 package org.thingsboard.server.transport.mqtt.sparkplugB;
 
+import com.cirruslink.sparkplug.SparkplugException;
 import com.cirruslink.sparkplug.message.SparkplugBPayloadDecoder;
+import com.cirruslink.sparkplug.message.SparkplugBPayloadEncoder;
 import com.cirruslink.sparkplug.message.model.Metric;
 import com.cirruslink.sparkplug.message.model.MetricDataType;
 import com.cirruslink.sparkplug.message.model.SparkplugBPayload;
@@ -8,12 +10,12 @@ import io.netty.buffer.ByteBuf;
 import io.netty.handler.codec.mqtt.MqttPublishMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.server.common.data.kv.*;
+import org.thingsboard.server.common.msg.kv.TelemetryKVMsg;
+import org.thingsboard.server.transport.mqtt.session.DeviceSessionCtx;
 import org.thingsboard.server.transport.mqtt.session.GatewaySessionCtx;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.io.IOException;
+import java.util.*;
 
 import static org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMsgTypes.DBIRTH;
 import static org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMsgTypes.DDATA;
@@ -22,6 +24,70 @@ import static org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMsgTypes
 public class SparkPlugSpecificationService {
 
     private Map<String, Boolean> deviceMap = new HashMap<>();
+
+    public static byte[] createSparkPlugPayload(DeviceSessionCtx ctx, TelemetryKVMsg payload){
+        List<TsKvEntry> tsKvEntries = payload.getDeviceTelemetry();
+        byte[] payloadByteArray = null;
+        try {
+            List<Metric> metricList = createMetricFromTsKvEntries(tsKvEntries);
+            SparkplugBPayload sparkplugBPayload = new SparkplugBPayload(new Date(), metricList, getSeqNum(ctx),
+                    newUUID(),
+                    null);
+            payloadByteArray = encodeSparkPlugBPayload(sparkplugBPayload);
+
+        }catch (SparkplugException e){
+            log.error("Problem occured in creating metric from tsKvEntries exception [{}]", e);
+        }
+        return payloadByteArray;
+    }
+
+    private static List<Metric> createMetricFromTsKvEntries(List<TsKvEntry> tsKvEntries) throws SparkplugException{
+        List<Metric> metricList = new ArrayList<>();
+        for (TsKvEntry tsKvEntry :tsKvEntries) {
+            MetricDataType metricDataType = inferTsKvEntryType(tsKvEntry);
+            Metric.MetricBuilder metricBuilder = new Metric.MetricBuilder(tsKvEntry.getKey(), metricDataType, tsKvEntry.getValue());
+            metricBuilder.timestamp(new Date(tsKvEntry.getTs()));
+            metricList.add(metricBuilder.createMetric());
+        }
+        return metricList;
+    }
+
+    private static MetricDataType inferTsKvEntryType(TsKvEntry tsKvEntry){
+        BasicTsKvEntry basicTsKvEntry = (BasicTsKvEntry) tsKvEntry;
+        if(basicTsKvEntry.getDataType() == DataType.STRING)
+            return MetricDataType.String;
+        else if(basicTsKvEntry.getDataType() == DataType.DOUBLE)
+            return MetricDataType.Double;
+        else if(basicTsKvEntry.getDataType() == DataType.LONG)
+            return MetricDataType.Int64;
+        else if(basicTsKvEntry.getDataType() == DataType.BOOLEAN)
+            return MetricDataType.Boolean;
+
+        return MetricDataType.Unknown;
+    }
+
+    private static int getSeqNum(DeviceSessionCtx ctx) {
+        if(ctx.getSparkPlugMetaData().getSeq() == 256){
+            ctx.getSparkPlugMetaData().setSeq(0);
+        }
+        int seq = ctx.getSparkPlugMetaData().getSeq();
+        ctx.getSparkPlugMetaData().setSeq(seq + 1);
+        return seq;
+    }
+
+    private static String newUUID() {
+        return java.util.UUID.randomUUID().toString();
+    }
+
+    private static byte[] encodeSparkPlugBPayload(SparkplugBPayload sparkplugBPayload){
+        byte[] payloadByteArray = null;
+        try {
+            payloadByteArray = new SparkplugBPayloadEncoder().getBytes(sparkplugBPayload);
+        }catch (IOException e){
+            log.error("Exception occured in converting sparkplugBPayload to bytes, exception [{}]", e);
+        }
+        return payloadByteArray;
+    }
 
     public void processSparkPlugbPostTelemetry(GatewaySessionCtx ctx, MqttPublishMessage inbound){
         String topicName = inbound.variableHeader().topicName();
@@ -90,7 +156,6 @@ public class SparkPlugSpecificationService {
         }else if(dataType.getClazz() == Boolean.class){
             kvEntryList.add(new BooleanDataEntry(metric.getName(),(Boolean)metric.getValue()));
         }
-
     }
 
     public void updateDeviceMapState(){

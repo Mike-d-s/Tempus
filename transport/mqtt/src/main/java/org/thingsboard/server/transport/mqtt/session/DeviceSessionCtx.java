@@ -29,6 +29,7 @@ import org.thingsboard.server.common.transport.adaptor.AdaptorException;
 import org.thingsboard.server.common.transport.auth.DeviceAuthService;
 import org.thingsboard.server.common.transport.session.DeviceAwareSessionContext;
 import org.thingsboard.server.transport.mqtt.adaptors.MqttTransportAdaptor;
+import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMetaData;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,6 +44,7 @@ public class DeviceSessionCtx extends DeviceAwareSessionContext {
     private ChannelHandlerContext channel;
     private volatile boolean allowAttributeResponses;
     private AtomicInteger msgIdSeq = new AtomicInteger(0);
+    private SparkPlugMetaData sparkPlugMetaData;
 
     public DeviceSessionCtx(SessionMsgProcessor processor, DeviceAuthService authService, MqttTransportAdaptor adaptor) {
         super(processor, authService);
@@ -95,6 +97,14 @@ public class DeviceSessionCtx extends DeviceAwareSessionContext {
     @Override
     public SessionId getSessionId() {
         return sessionId;
+    }
+
+    public SparkPlugMetaData getSparkPlugMetaData() {
+        return sparkPlugMetaData;
+    }
+
+    public void setSparkPlugMetaData(SparkPlugMetaData sparkPlugMetaData) {
+        this.sparkPlugMetaData = sparkPlugMetaData;
     }
 
     public void setChannel(ChannelHandlerContext channel) {

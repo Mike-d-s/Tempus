@@ -36,6 +36,7 @@ import org.thingsboard.server.common.data.relation.RelationTypeGroup;
 import org.thingsboard.server.common.data.rule.RuleMetaData;
 import org.thingsboard.server.common.msg.cluster.ServerAddress;
 import org.thingsboard.server.extensions.api.device.DeviceAttributesEventNotificationMsg;
+import org.thingsboard.server.extensions.api.device.DeviceTelemetryEventNotificationMsg;
 import org.thingsboard.server.extensions.api.plugins.PluginApiCallSecurityContext;
 import org.thingsboard.server.extensions.api.plugins.PluginCallback;
 import org.thingsboard.server.extensions.api.plugins.PluginContext;
@@ -155,7 +156,7 @@ public final class PluginProcessingContext implements PluginContext {
     }
 
     @Override
-    public void saveTsData(final EntityId entityId, final TsKvEntry entry, final PluginCallback<Void> callback) {
+    public void saveTsData(final TenantId tenantId, final EntityId entityId, final TsKvEntry entry, final PluginCallback<Void> callback) {
         validate(entityId, new ValidationCallback(callback, ctx -> {
             ListenableFuture<List<Void>> rsListFuture = pluginCtx.tsService.save(entityId, entry);
             Futures.addCallback(rsListFuture, getListCallback(callback, v -> null), executor);
@@ -163,15 +164,20 @@ public final class PluginProcessingContext implements PluginContext {
     }
 
     @Override
-    public void saveTsData(final EntityId entityId, final List<TsKvEntry> entries, final PluginCallback<Void> callback) {
-        saveTsData(entityId, entries, 0L, callback);
+    public void saveTsData(final TenantId tenantId, final EntityId entityId, final List<TsKvEntry> entries, final PluginCallback<Void> callback) {
+        saveTsData(tenantId, entityId, entries, 0L, callback);
     }
 
     @Override
-    public void saveTsData(final EntityId entityId, final List<TsKvEntry> entries, long ttl, final PluginCallback<Void> callback) {
+    public void saveTsData(final TenantId tenantId, final EntityId entityId, final List<TsKvEntry> entries, long ttl, final PluginCallback<Void> callback) {
         validate(entityId, new ValidationCallback(callback, ctx -> {
             ListenableFuture<List<Void>> rsListFuture = pluginCtx.tsService.save(entityId, entries, ttl);
-            Futures.addCallback(rsListFuture, getListCallback(callback, v -> null), executor);
+            Futures.addCallback(rsListFuture, getListCallback(callback, v -> {
+                if (entityId.getEntityType() == EntityType.DEVICE) {
+                    onDeviceTelemetryChanged(tenantId, new DeviceId(entityId.getId()), entries);
+                }
+                return null;
+            }), executor);
         }));
     }
 
@@ -309,6 +315,10 @@ public final class PluginProcessingContext implements PluginContext {
 
     private void onDeviceAttributesChanged(TenantId tenantId, DeviceId deviceId, String scope, List<AttributeKvEntry> values) {
         pluginCtx.toDeviceActor(DeviceAttributesEventNotificationMsg.onUpdate(tenantId, deviceId, scope, values));
+    }
+
+    private void onDeviceTelemetryChanged(TenantId tenantId, DeviceId deviceId, List<TsKvEntry> values) {
+        pluginCtx.toDeviceActor(DeviceTelemetryEventNotificationMsg.onUpdate(tenantId, deviceId, values));
     }
 
     private <T, R> FutureCallback<List<T>> getListCallback(final PluginCallback<R> callback, Function<List<T>, R> transformer) {

@@ -42,6 +42,7 @@ import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.transport.mqtt.adaptors.MqttTransportAdaptor;
 import org.thingsboard.server.transport.mqtt.session.DeviceSessionCtx;
 import org.thingsboard.server.transport.mqtt.session.GatewaySessionCtx;
+import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMetaData;
 import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugSpecificationService;
 import org.thingsboard.server.transport.mqtt.util.SslUtil;
 
@@ -243,7 +244,13 @@ public class MqttTransportHandler extends ChannelInboundHandlerAdapter implement
                     AdaptorToSessionActorMsg msg = adaptor.convertToActorMsg(deviceSessionCtx, SUBSCRIBE_ATTRIBUTES_REQUEST, mqttMsg);
                     processor.process(new BasicToDeviceActorSessionMsg(deviceSessionCtx.getDevice(), msg));
                     grantedQoSList.add(getMinSupportedQos(reqQoS));
-                } else if (topicName.equals(DEVICE_RPC_REQUESTS_SUB_TOPIC)) {
+                } else if (topicName.startsWith(sparkPlugNameSpace)) {
+                    AdaptorToSessionActorMsg msg = adaptor.convertToActorMsg(deviceSessionCtx, SUBSCRIBE_SPARKPLUG_TELEMETRY_REQUEST, mqttMsg);
+                    SparkPlugMetaData sparkPlugMetaData = new SparkPlugMetaData(topicName,0);
+                    deviceSessionCtx.setSparkPlugMetaData(sparkPlugMetaData);
+                    processor.process(new BasicToDeviceActorSessionMsg(deviceSessionCtx.getDevice(), msg));
+                    grantedQoSList.add(getMinSupportedQos(reqQoS));
+                }else if (topicName.equals(DEVICE_RPC_REQUESTS_SUB_TOPIC)) {
                     AdaptorToSessionActorMsg msg = adaptor.convertToActorMsg(deviceSessionCtx, SUBSCRIBE_RPC_COMMANDS_REQUEST, mqttMsg);
                     processor.process(new BasicToDeviceActorSessionMsg(deviceSessionCtx.getDevice(), msg));
                     grantedQoSList.add(getMinSupportedQos(reqQoS));
