@@ -15,6 +15,8 @@
  */
 package org.thingsboard.server.transport.mqtt.session;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -41,8 +43,9 @@ import org.thingsboard.server.dao.device.DeviceService;
 import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.transport.mqtt.MqttTransportHandler;
 import org.thingsboard.server.transport.mqtt.adaptors.JsonMqttAdaptor;
-import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMsgTypes;
+import org.thingsboard.server.transport.mqtt.sparkplugB.data.SparkPlugDecodedMsg;
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -57,6 +60,7 @@ public class GatewaySessionCtx {
     private static final String DEFAULT_DEVICE_TYPE = "default";
     public static final String CAN_T_PARSE_VALUE = "Can't parse value: ";
     public static final String DEVICE_PROPERTY = "device";
+    private static final String SPARKPLUG_DEVICE_TYPE = "sparkplug";
     private final Device gateway;
     private final SessionId gatewaySessionId;
     private final SessionMsgProcessor processor;
@@ -94,6 +98,33 @@ public class GatewaySessionCtx {
                 device.setType(deviceType);
                 device = deviceService.saveDevice(device);
                 relationService.saveRelationAsync(new EntityRelation(gateway.getId(), device.getId(), "Created"));
+            }
+            GatewayDeviceSessionCtx ctx = new GatewayDeviceSessionCtx(this, device);
+            devices.put(deviceName, ctx);
+            log.debug("[{}] Added device [{}] to the gateway session", gatewaySessionId, deviceName);
+            processor.process(new BasicToDeviceActorSessionMsg(device, new BasicAdaptorToSessionActorMsg(ctx, new AttributesSubscribeMsg())));
+            processor.process(new BasicToDeviceActorSessionMsg(device, new BasicAdaptorToSessionActorMsg(ctx, new RpcSubscribeMsg())));
+        }
+    }
+
+    private void onSparkPlugDeviceConnect(String deviceName, String deviceType, String topic) {
+        if (!devices.containsKey(deviceName)) {
+            Device device = deviceService.findDeviceByTenantIdAndName(gateway.getTenantId(), deviceName);
+            if (device == null) {
+                device.setTenantId(gateway.getTenantId());
+                device.setName(deviceName);
+                device.setType(deviceType);
+                log.info("topic on Sparkplug device connect " + topic);
+                try {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode additionalInfo = mapper.readTree("{\"topic\":\"" + topic + "\"}");
+                    device.setAdditionalInfo(additionalInfo);
+                }
+                catch (IOException e){
+                    log.error("Topic could not be parsed to additional info " + e);
+                }
+                device = deviceService.saveDevice(device);
+                relationService.saveRelation(new EntityRelation(gateway.getId(), device.getId(), "Created"));
             }
             GatewayDeviceSessionCtx ctx = new GatewayDeviceSessionCtx(this, device);
             devices.put(deviceName, ctx);
@@ -146,10 +177,11 @@ public class GatewaySessionCtx {
         }
     }
 
-    public void onSparkPlugDecodedMsg(Long ts, MqttPublishMessage mqttMsg, List<KvEntry> kvEntryList) throws AdaptorException {
-        int requestId = mqttMsg.variableHeader().messageId();
-        String deviceName = createDeviceName(mqttMsg.variableHeader().topicName());
-        deviceName = checkDeviceConnected(deviceName);
+    public void onSparkPlugDecodedMsg(SparkPlugDecodedMsg sparkPlugDecodedMsg, String topic, String deviceName) throws AdaptorException {
+        int requestId = sparkPlugDecodedMsg.getRequestId();
+        deviceName = checkSparkPlugDeviceConnected(deviceName, topic);
+        List<KvEntry> kvEntryList = sparkPlugDecodedMsg.getKvEntryList();
+        Long ts = sparkPlugDecodedMsg.getTs();
         BasicTelemetryUploadRequest request = new BasicTelemetryUploadRequest(requestId);
         for (KvEntry entry : kvEntryList) {
             request.add(ts, entry);
@@ -157,34 +189,6 @@ public class GatewaySessionCtx {
         GatewayDeviceSessionCtx deviceSessionCtx = devices.get(deviceName);
         processor.process(new BasicToDeviceActorSessionMsg(deviceSessionCtx.getDevice(),
                 new BasicAdaptorToSessionActorMsg(deviceSessionCtx, request)));
-    }
-
-    private String createDeviceName(String topicName){
-        String[] splitTopic = topicName.split("/");
-        StringBuilder deviceName = new StringBuilder();
-        String delimeter = "";
-        for (String str: splitTopic) {
-            if(!sparkPlugMsgTypes(str)) {
-                deviceName.append(delimeter);
-                deviceName.append(str);
-                delimeter = "/";
-            }
-        }
-        return deviceName.toString();
-    }
-
-    private boolean sparkPlugMsgTypes(String type){
-        switch (type){
-            case SparkPlugMsgTypes.DBIRTH : return true;
-            case SparkPlugMsgTypes.DDEATH : return true;
-            case SparkPlugMsgTypes.DDATA : return true;
-            case SparkPlugMsgTypes.NBIRTH : return true;
-            case SparkPlugMsgTypes.NDATA : return true;
-            case SparkPlugMsgTypes.NDEATH : return true;
-            case SparkPlugMsgTypes.NCMD : return true;
-            case SparkPlugMsgTypes.DCMD : return true;
-            default: return false;
-        }
     }
 
     public void onDeviceDepthTelemetry(MqttPublishMessage mqttMsg) throws AdaptorException {
@@ -286,6 +290,14 @@ public class GatewaySessionCtx {
         if (!devices.containsKey(deviceName)) {
             log.debug("[{}] Missing device [{}] for the gateway session", gatewaySessionId, deviceName);
             onDeviceConnect(deviceName, DEFAULT_DEVICE_TYPE);
+        }
+        return deviceName;
+    }
+
+    private String checkSparkPlugDeviceConnected(String deviceName, String topic) {
+        if (!devices.containsKey(deviceName)) {
+            log.debug("[{}] Missing device [{}] for the gateway session", gatewaySessionId, deviceName);
+            onSparkPlugDeviceConnect(deviceName, SPARKPLUG_DEVICE_TYPE, topic);
         }
         return deviceName;
     }

@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.transport.mqtt.adaptors;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
@@ -30,17 +31,18 @@ import io.netty.handler.codec.mqtt.MqttMessageType;
 import io.netty.handler.codec.mqtt.MqttPublishVariableHeader;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.id.SessionId;
 import org.thingsboard.server.common.msg.core.*;
 import org.thingsboard.server.common.msg.kv.AttributesKVMsg;
-import org.thingsboard.server.common.msg.kv.TelemetryKVMsg;
 import org.thingsboard.server.common.msg.session.*;
 import org.thingsboard.server.common.transport.adaptor.AdaptorException;
 import org.thingsboard.server.common.transport.adaptor.JsonConverter;
 import org.thingsboard.server.transport.mqtt.MqttTopics;
 import org.thingsboard.server.transport.mqtt.session.DeviceSessionCtx;
 import org.thingsboard.server.transport.mqtt.MqttTransportHandler;
-import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugSpecificationService;
+import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugDecodeService;
+import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugEncodeService;
 
 import java.nio.charset.Charset;
 import java.util.Arrays;
@@ -129,9 +131,11 @@ public class JsonMqttAdaptor implements MqttTransportAdaptor {
                 break;
             case SPARKPLUG_TELEMETRY_UPDATE_NOTIFICATION:
                 TelemetryUpdateNotification telemetryUpdateNotification = (TelemetryUpdateNotification) msg;
-                String topicName = ctx.getSparkPlugMetaData().getTopicName();
-                byte[] sparkPlugPayload = SparkPlugSpecificationService.createSparkPlugPayload(ctx, telemetryUpdateNotification.getData());
-                result = createMqttPublishMsg(ctx, topicName, sparkPlugPayload);
+                String msgType = ctx.getSparkPlugMetaData().getMsgType();
+                String topic = extractTopicFromDeviceAdditionalInfo(ctx);
+                String topicWithMsgType = createTopicNameWithMsgType(topic, msgType);
+                byte[] sparkPlugPayload = SparkPlugEncodeService.createSparkPlugPayload(ctx, telemetryUpdateNotification.getData());
+                result = createMqttPublishMsg(ctx, topicWithMsgType, sparkPlugPayload);
                 break;
             case TO_DEVICE_RPC_REQUEST:
                 ToDeviceRpcRequestMsg rpcRequest = (ToDeviceRpcRequestMsg) msg;
@@ -209,6 +213,28 @@ public class JsonMqttAdaptor implements MqttTransportAdaptor {
         ByteBuf payload = ALLOCATOR.buffer();
         payload.writeBytes(sparkPlugPayLoad);
         return new MqttPublishMessage(mqttFixedHeader, header, payload);
+    }
+
+    private String extractTopicFromDeviceAdditionalInfo(DeviceSessionCtx ctx){
+        Device device = ctx.getDevice();
+        JsonNode jsonNode = device.getAdditionalInfo();
+        return jsonNode.get("topic").asText();
+    }
+
+    private String createTopicNameWithMsgType(String topic, String msgType){
+        String[] topicSplit = topic.split("/");
+        StringBuilder newTopic = new StringBuilder();
+        String delimiter = "";
+        for(int i = 0; i < topicSplit.length; i++){
+            newTopic.append(delimiter);
+            newTopic.append(topicSplit[i]);
+            delimiter = "/";
+            if(i == 1){
+                newTopic.append(delimiter);
+                newTopic.append(msgType);
+            }
+        }
+        return newTopic.toString();
     }
 
     private FromDeviceMsg convertToGetAttributesRequest(DeviceSessionCtx ctx, MqttPublishMessage inbound) throws AdaptorException {

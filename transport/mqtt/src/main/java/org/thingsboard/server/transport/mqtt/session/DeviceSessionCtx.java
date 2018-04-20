@@ -29,7 +29,7 @@ import org.thingsboard.server.common.transport.adaptor.AdaptorException;
 import org.thingsboard.server.common.transport.auth.DeviceAuthService;
 import org.thingsboard.server.common.transport.session.DeviceAwareSessionContext;
 import org.thingsboard.server.transport.mqtt.adaptors.MqttTransportAdaptor;
-import org.thingsboard.server.transport.mqtt.sparkplugB.SparkPlugMetaData;
+import org.thingsboard.server.transport.mqtt.sparkplugB.data.SparkPlugMetaData;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
