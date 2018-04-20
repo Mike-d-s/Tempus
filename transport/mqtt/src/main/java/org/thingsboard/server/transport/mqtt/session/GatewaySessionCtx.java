@@ -111,6 +111,7 @@ public class GatewaySessionCtx {
         if (!devices.containsKey(deviceName)) {
             Device device = deviceService.findDeviceByTenantIdAndName(gateway.getTenantId(), deviceName);
             if (device == null) {
+                device = new Device();
                 device.setTenantId(gateway.getTenantId());
                 device.setName(deviceName);
                 device.setType(deviceType);
@@ -155,7 +156,7 @@ public class GatewaySessionCtx {
 
     public void onDeviceTelemetry(MqttPublishMessage mqttMsg) throws AdaptorException {
         JsonElement json = validateJsonPayload(gatewaySessionId, mqttMsg.payload());
-        int requestId = mqttMsg.variableHeader().messageId();
+        int requestId = mqttMsg.variableHeader().packetId();
         if (json.isJsonObject()) {
             JsonObject jsonObj = json.getAsJsonObject();
             for (Map.Entry<String, JsonElement> deviceEntry : jsonObj.entrySet()) {
@@ -193,7 +194,7 @@ public class GatewaySessionCtx {
 
     public void onDeviceDepthTelemetry(MqttPublishMessage mqttMsg) throws AdaptorException {
         JsonElement json = validateJsonPayload(gatewaySessionId, mqttMsg.payload());
-        int requestId = mqttMsg.variableHeader().messageId();
+        int requestId = mqttMsg.variableHeader().packetId();
         if (json.isJsonObject()) {
             JsonObject jsonObj = json.getAsJsonObject();
             for (Map.Entry<String, JsonElement> deviceEntry : jsonObj.entrySet()) {
@@ -232,7 +233,7 @@ public class GatewaySessionCtx {
 
     public void onDeviceAttributes(MqttPublishMessage mqttMsg) throws AdaptorException {
         JsonElement json = validateJsonPayload(gatewaySessionId, mqttMsg.payload());
-        int requestId = mqttMsg.variableHeader().messageId();
+        int requestId = mqttMsg.variableHeader().packetId();
         if (json.isJsonObject()) {
             JsonObject jsonObj = json.getAsJsonObject();
             for (Map.Entry<String, JsonElement> deviceEntry : jsonObj.entrySet()) {
@@ -336,8 +337,8 @@ public class GatewaySessionCtx {
     }
 
     private void ack(MqttPublishMessage msg) {
-        if (msg.variableHeader().messageId() > 0) {
-            writeAndFlush(MqttTransportHandler.createMqttPubAckMsg(msg.variableHeader().messageId()));
+        if (msg.variableHeader().packetId() > 0) {
+            writeAndFlush(MqttTransportHandler.createMqttPubAckMsg(msg.variableHeader().packetId()));
         }
     }
 
